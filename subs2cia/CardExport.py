@@ -1,3 +1,4 @@
+import multiprocessing
 from subs2cia.sources import AVSFile
 from subs2cia.Common import Common, interactive_picker, chapter_timestamps
 import subs2cia.subtools as subtools
@@ -6,10 +7,66 @@ from subs2cia.ffmpeg_tools import ffmpeg_trim_audio_clip_atrim_encode, ffmpeg_ge
 from typing import List, Union
 from pathlib import Path
 import logging
-import tqdm
+# import tqdm
+from tqdm.contrib.concurrent import process_map
 import pandas as pd
 import unicodedata as ud
 from collections import defaultdict
+
+
+def do_single_export(container):
+    group = container["group"]
+    export_audio = container["export_audio"]
+    export_screenshot = container["export_screenshot"]
+    sources = container["sources"]
+    outdir = container["outdir"]
+    outstem = container["outstem"]
+    audio_input_file = container["audio_input_file"]
+    video_input_file = container["video_input_file"]
+    quality = False
+    normalize_audio = False
+    to_mono = False
+    # expose these as options at some point
+    # will need to rename these if they are going to become cli switches so they don't conflict
+    forbidden_chars = ['[' , ']' , '<' , '>' , ':' , '"' , '/' , '?' , '*' , '^' , '\\' , '|']  # see fn disallowed_char in https://github.com/ankitects/anki/blob/main/rslib/src/media/files.rs
+    forbidden_chars = {ord(c): '' for c in forbidden_chars}
+
+    export_video = False
+    lbda = 0.0  # where to get screenshot. 0=start, 1=end, 0.5=middle
+    w = -1
+    h = -1
+    if group.contains_only_ephemeral:
+            return None
+    row = {'text': group.events[0].plaintext,
+            'timestamps': f"{group.group_range[0]}-{group.group_range[1]}",
+            'audioclip': None,
+            'screenclip': None,
+            'videoclip': None,
+            'sources': sources}
+    if export_audio:
+        outpath = outdir / (ud.normalize('NFC', outstem).translate(forbidden_chars) + f"_{group.group_range[0]}-{group.group_range[1]}.mp3")
+        row['audioclip'] = f"[sound:{outpath.name}]"
+        ffmpeg_trim_audio_clip_atrim_encode(input_file=audio_input_file,
+                                            stream_index=0,
+                                            timestamp_start=group.group_range[0],
+                                            timestamp_end=group.group_range[1], quality=quality,
+                                            to_mono=to_mono, normalize_audio=normalize_audio,
+                                            outpath=outpath)
+    if export_screenshot:
+        outpath = outdir / (ud.normalize('NFC', outstem).translate(forbidden_chars) + f"_{group.group_range[0]}-{group.group_range[1]}.jpg")
+        row['screenclip'] = f"<img src='{outpath.name}'>"
+        timestamp = (1-lbda) * group.group_range[0] + lbda * group.group_range[1]
+        ffmpeg_get_frame_fast(video_input_file,
+                                timestamp=timestamp, outpath=outpath, w=w, h=h)
+    if export_video:
+        outpath = outdir / (ud.normalize('NFC', outstem).translate(forbidden_chars) + f"_{group.group_range[0]}-{group.group_range[1]}.mp4")
+        row['videoclip'] = f"[sound:{outpath.name}]"
+        ffmpeg_trim_video_clip_directcopy(video_input_file,
+                                            timestamp_start=group.group_range[0],
+                                            timestamp_end=group.group_range[1], quality=None, outpath=outpath)
+    return row
+
+
 
 class CardExport(Common):
     def __init__(self, sources: List[AVSFile], outdir: Path, outstem: Union[str, None], condensed_video: bool, padding: int,
@@ -92,52 +149,33 @@ class CardExport(Common):
 
             self.subdata = subdata
 
+
     def export(self):
-        # expose these as options at some point
-        # will need to rename these if they are going to become cli switches so they don't conflict
-        forbidden_chars = ['[' , ']' , '<' , '>' , ':' , '"' , '/' , '?' , '*' , '^' , '\\' , '|']  # see fn disallowed_char in https://github.com/ankitects/anki/blob/main/rslib/src/media/files.rs
-        forbidden_chars = {ord(c): '' for c in forbidden_chars}
-        export_audio = True if self.picked_streams['audio'] is not None else False
-        export_screenshot = True if self.picked_streams['video'] is not None else False
-        export_video = False
-        lbda = 0.0  # where to get screenshot. 0=start, 1=end, 0.5=middle
-        w = -1
-        h = -1
+
         columns = ['text', 'timestamps', 'audioclip', 'screenclip', 'videoclip', 'sources']
         exported = pd.DataFrame(columns=columns)
-        for group in tqdm.tqdm(self.subdata.groups):
-            # since subdata.merge_groups hasn't been called, each group only contains one SSAevent
 
-            if group.contains_only_ephemeral:
-                continue
-            row = {'text': group.events[0].plaintext,
-                   'timestamps': f"{group.group_range[0]}-{group.group_range[1]}",
-                   'audioclip': None,
-                   'screenclip': None,
-                   'videoclip': None,
-                   'sources': ",".join([s.filepath.name for s in self.sources])}
-            if export_audio:
-                outpath = self.outdir / (ud.normalize('NFC', self.outstem).translate(forbidden_chars) + f"_{group.group_range[0]}-{group.group_range[1]}.mp3")
-                row['audioclip'] = f"[sound:{outpath.name}]"
-                ffmpeg_trim_audio_clip_atrim_encode(input_file=self.picked_streams['audio'].demux_file.filepath,
-                                                    stream_index=0,
-                                                    timestamp_start=group.group_range[0],
-                                                    timestamp_end=group.group_range[1], quality=self.quality,
-                                                    to_mono=self.to_mono, normalize_audio=self.normalize_audio,
-                                                    outpath=outpath)
-            if export_screenshot:
-                outpath = self.outdir / (ud.normalize('NFC', self.outstem).translate(forbidden_chars) + f"_{group.group_range[0]}-{group.group_range[1]}.jpg")
-                row['screenclip'] = f"<img src='{outpath.name}'>"
-                timestamp = (1-lbda) * group.group_range[0] + lbda * group.group_range[1]
-                ffmpeg_get_frame_fast(self.picked_streams['video'].file.filepath,
-                                      timestamp=timestamp, outpath=outpath, w=w, h=h)
-            if export_video:
-                outpath = self.outdir / (ud.normalize('NFC', self.outstem).translate(forbidden_chars) + f"_{group.group_range[0]}-{group.group_range[1]}.mp4")
-                row['videoclip'] = f"[sound:{outpath.name}]"
-                ffmpeg_trim_video_clip_directcopy(self.picked_streams['video'].file.filepath,
-                                                  timestamp_start=group.group_range[0],
-                                                    timestamp_end=group.group_range[1], quality=None, outpath=outpath)
-            exported = exported.append([row], ignore_index=True)
+        # for group in tqdm.tqdm(self.subdata.groups):
+            # since subdata.merge_groups hasn't been called, each group only contains one SSAevent
+        sources = ",".join([s.filepath.name for s in self.sources])
+        containers = []
+        for group in self.subdata.groups:
+
+            containers.append({
+                "group": group,
+                "export_audio": True if self.picked_streams['audio'] is not None else False,
+                "export_screenshot": True if self.picked_streams['video'] is not None else False,
+                "sources": sources,
+                "outdir": self.outdir,
+                "outstem": self.outstem,
+                "audio_input_file": self.picked_streams['audio'].demux_file.filepath,
+                "video_input_file": self.picked_streams['video'].file.filepath,
+            })
+        rows = process_map(do_single_export, containers, max_workers=multiprocessing.cpu_count())
+        for row in rows:
+            if row:
+                exported = exported.append([row], ignore_index=True)
+
             # if exported.shape[0] > 10:  # DEBUG ONLY
             #     break
         # print(exported)
