@@ -43,6 +43,7 @@ class AVSFile:
             logging.debug(self.info)
             self.type = None
             return
+        # can be Video: mjpeg
         if len(self.info['streams']) > 1:
             self.type = 'video'  # video files are treated as multi-stream objects
             return
@@ -145,25 +146,26 @@ class Stream:
                 # we could change what type to demux as similarly to subtitles,
                 # but it may cause compatability issues down the road so let's
                 # keep it as flac for now
-                extension = 'flac'
-            demux_path = self.file.filepath.parent / Path(
-                f'{self.file.filepath.name}.stream{self.index}.{self.type}.{self.get_language()}.{extension}')
+                extension = 'm4b'
+            # demux_path = self.file.filepath.parent / Path(
+            #     f'{self.file.filepath.name}.stream{self.index}.{self.type}.{self.get_language()}.{extension}')
 
-            if overwrite_existing or not demux_path.exists() or demux_path.stat().st_size == 0:
-                demux_path = ffmpeg_demux(self.file.filepath, self.index, demux_path)
-                if demux_path is None:
-                    logging.error(
-                        f"Couldn't demux stream {self.index} from {str(self.file.filepath)} (type={self.type})")
-                    return None
-        self.demux_file = AVSFile(demux_path)
+            # if overwrite_existing or not demux_path.exists() or demux_path.stat().st_size == 0:
+            #     demux_path = ffmpeg_demux(self.file.filepath, self.index, demux_path)
+            #     if demux_path is None:
+            #         logging.error(
+            #             f"Couldn't demux stream {self.index} from {str(self.file.filepath)} (type={self.type})")
+            #         return None
+        self.demux_file = AVSFile(self.file.filepath)
         self.demux_file.probe()
         self.demux_file.get_type()
         return self.demux_file
 
     def cleanup_demux(self):
         if self.demux_file is not None and self.index is not None:
-            logging.info(f"Deleting temporary file {str(self.demux_file.filepath)}")
-            self.demux_file.filepath.unlink()
+            # logging.info(f"Deleting temporary file {str(self.demux_file.filepath)}")
+            # self.demux_file.filepath.unlink()
+            pass
 
     # return a readable path to the data
     def get_data_path(self) -> Path:

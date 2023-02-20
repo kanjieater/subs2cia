@@ -3,3 +3,5 @@
 /*.egg-info
 /test
 /dist
+__pycache__
+.vscode/
