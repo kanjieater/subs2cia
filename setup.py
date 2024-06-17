@@ -48,11 +48,13 @@ setuptools.setup(
     ],
     python_requires='>=3.6',
     install_requires=[
-        "ffmpeg-python",
-        "pycountry",
-        "pysubs2",
-        "tqdm",
-        "pandas", "tqdm", "gevent", "colorlog"
+        "colorlog==6.8.2",
+        "ffmpeg-python==0.2.0",
+        "numpy==2.0.0",
+        "pandas==2.2.2",
+        "pycountry==24.6.1",
+        "pysubs2==1.7.2",
+        "tqdm==4.66.4"
     ],
     entry_points={
         # create a cli command called 'subs2cia' which runs the main() function in subs2cia.cli

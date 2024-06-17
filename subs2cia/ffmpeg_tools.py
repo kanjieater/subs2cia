@@ -3,7 +3,6 @@ import logging
 from pathlib import Path
 import subprocess
 from typing import List, Union
-import gevent, gevent.monkey
 from tqdm import tqdm, TqdmWarning
 
 import warnings
@@ -11,8 +10,6 @@ warnings.filterwarnings("ignore", category=TqdmWarning)
 
 import contextlib
 import ffmpeg
-import gevent
-import gevent.monkey; gevent.monkey.patch_all(thread=False)
 import os
 import shutil
 import socket
@@ -32,54 +29,54 @@ def _tmpdir_scope():
         shutil.rmtree(tmpdir)
 
 
-def _do_watch_progress(filename, sock, handler):
-    """Function to run in a separate gevent greenlet to read progress
-    events from a unix-domain socket."""
-    connection, client_address = sock.accept()
-    data = b''
-    try:
-        while True:
-            more_data = connection.recv(16)
-            if not more_data:
-                break
-            data += more_data
-            lines = data.split(b'\n')
-            for line in lines[:-1]:
-                line = line.decode()
-                parts = line.split('=')
-                key = parts[0] if len(parts) > 0 else None
-                value = parts[1] if len(parts) > 1 else None
-                handler(key, value)
-            data = lines[-1]
-    finally:
-        connection.close()
+# def _do_watch_progress(filename, sock, handler):
+#     """Function to run in a separate gevent greenlet to read progress
+#     events from a unix-domain socket."""
+#     connection, client_address = sock.accept()
+#     data = b''
+#     try:
+#         while True:
+#             more_data = connection.recv(16)
+#             if not more_data:
+#                 break
+#             data += more_data
+#             lines = data.split(b'\n')
+#             for line in lines[:-1]:
+#                 line = line.decode()
+#                 parts = line.split('=')
+#                 key = parts[0] if len(parts) > 0 else None
+#                 value = parts[1] if len(parts) > 1 else None
+#                 handler(key, value)
+#             data = lines[-1]
+#     finally:
+#         connection.close()
 
 
-@contextlib.contextmanager
-def _watch_progress(handler):
-    """Context manager for creating a unix-domain socket and listen for
-    ffmpeg progress events.
-    The socket filename is yielded from the context manager and the
-    socket is closed when the context manager is exited.
-    Args:
-        handler: a function to be called when progress events are
-            received; receives a ``key`` argument and ``value``
-            argument. (The example ``show_progress`` below uses tqdm)
-    Yields:
-        socket_filename: the name of the socket file.
-    """
-    with _tmpdir_scope() as tmpdir:
-        socket_filename = os.path.join(tmpdir, 'sock')
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        with contextlib.closing(sock):
-            sock.bind(socket_filename)
-            sock.listen(1)
-            child = gevent.spawn(_do_watch_progress, socket_filename, sock, handler)
-            try:
-                yield socket_filename
-            except:
-                gevent.kill(child)
-                raise
+# @contextlib.contextmanager
+# def _watch_progress(handler):
+#     """Context manager for creating a unix-domain socket and listen for
+#     ffmpeg progress events.
+#     The socket filename is yielded from the context manager and the
+#     socket is closed when the context manager is exited.
+#     Args:
+#         handler: a function to be called when progress events are
+#             received; receives a ``key`` argument and ``value``
+#             argument. (The example ``show_progress`` below uses tqdm)
+#     Yields:
+#         socket_filename: the name of the socket file.
+#     """
+#     with _tmpdir_scope() as tmpdir:
+#         socket_filename = os.path.join(tmpdir, 'sock')
+#         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+#         with contextlib.closing(sock):
+#             sock.bind(socket_filename)
+#             sock.listen(1)
+#             child = gevent.spawn(_do_watch_progress, socket_filename, sock, handler)
+#             try:
+#                 yield socket_filename
+#             except:
+#                 gevent.kill(child)
+#                 raise
 
 
 
@@ -94,8 +91,8 @@ def show_progress(total_duration, desc):
                 bar.update(time - bar.n)
             elif key == 'progress' and value == 'end':
                 bar.update(bar.total - bar.n)
-        with _watch_progress(handler) as socket_filename:
-            yield socket_filename
+        # with _watch_progress(handler) as socket_filename:
+            # yield socket_filename
 
 
 # given a stream in the input file, demux the stream and save it into the outfile with some type

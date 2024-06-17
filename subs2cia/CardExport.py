@@ -174,7 +174,7 @@ class CardExport(Common):
         rows = process_map(do_single_export, containers, max_workers=multiprocessing.cpu_count())
         for row in rows:
             if row:
-                exported = exported.append([row], ignore_index=True)
+                exported = pd.concat([exported, pd.DataFrame([row])], ignore_index=True)
 
             # if exported.shape[0] > 10:  # DEBUG ONLY
             #     break
