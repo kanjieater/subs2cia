@@ -50,7 +50,7 @@ setuptools.setup(
     install_requires=[
         "colorlog==6.8.2",
         "ffmpeg-python==0.2.0",
-        "numpy==2.0.0",
+        "numpy",
         "pandas==2.2.2",
         "pycountry==24.6.1",
         "pysubs2==1.7.2",
